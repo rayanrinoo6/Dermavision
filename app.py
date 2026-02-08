@@ -61,5 +61,6 @@ if uploaded_file is not None:
 
 #FOOTER
 st.markdown("---")
-st.caption("This tool is for research and educational use only.")
+st.write("This tool is for research and educational use only.")
+
 
