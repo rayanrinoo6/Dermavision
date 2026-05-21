@@ -22,7 +22,7 @@ st.set_page_config(
 )
 
 st.title("DermaVision")
-st.write("Upload a skin lesion image to receive a prediction.")
+st.write("Upload a skin lesion image to receive a prediction, please make sure the image is in suitable lighting.")
 
 
 #LOAD MODEL
