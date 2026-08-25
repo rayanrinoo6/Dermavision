@@ -3,13 +3,15 @@ import tensorflow as tf
 import numpy as np
 from PIL import Image
 from huggingface_hub import hf_hub_download
+from tensorflow.keras.applications.resnet50 import preprocess_input
 
 # CONFIG
 IMG_SIZE = (224, 224)
-THRESHOLD = 0.5
+THRESHOLD = 0.543  # from PR-curve best-F1 sweep in training script (P=0.893, R=0.875)
+
 MODEL_PATH = hf_hub_download(
     repo_id="RAYAN34567/skin_cancer_resnet",
-    filename="skin_cancer_resnet50.keras"   # <-- changed from .h5 to .keras
+    filename="skin_cancer_resnet50.keras"
 )
 
 # PAGE SETUP
@@ -38,9 +40,12 @@ if uploaded_file is not None:
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Uploaded Image", width=233)
 
+    # --- preprocessing must match training exactly ---
     img = image.resize(IMG_SIZE)
-    img_array = np.array(img, dtype="float32") / 255.0
+    img_array = np.array(img, dtype="float32")
     img_array = np.expand_dims(img_array, axis=0)
+    img_array = preprocess_input(img_array)  # ResNet50 preprocessing (NOT /255)
+    # ---------------------------------------------------
 
     prob = model.predict(img_array, verbose=0)[0][0]
     prediction = "Cancer" if prob >= THRESHOLD else "Non-Cancer"
