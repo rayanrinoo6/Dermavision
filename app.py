@@ -6,7 +6,7 @@ from huggingface_hub import hf_hub_download
 
 # CONFIG
 IMG_SIZE = (224, 224)
-THRESHOLD = 0.4
+THRESHOLD = 0.5
 MODEL_PATH = hf_hub_download(
     repo_id="RAYAN34567/skin_cancer_resnet",
     filename="skin_cancer_resnet50.keras"   # <-- changed from .h5 to .keras
