@@ -8,8 +8,8 @@ from huggingface_hub import hf_hub_download
 IMG_SIZE = (224, 224)
 THRESHOLD = 0.4
 MODEL_PATH = hf_hub_download(
-    repo_id="RAYAN34567/Skin_Cancer_AI",
-    filename="skin_cancer_cnn_final.keras"   # <-- changed from .h5 to .keras
+    repo_id="RAYAN34567/skin_cancer_resnet",
+    filename="skin_cancer_resnet50.keras"   # <-- changed from .h5 to .keras
 )
 
 # PAGE SETUP
