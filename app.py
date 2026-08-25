@@ -4,7 +4,6 @@ import numpy as np
 from PIL import Image
 from huggingface_hub import hf_hub_download
 from tensorflow.keras.applications.resnet50 import preprocess_input
-import matplotlib.pyplot as plt
 import cv2
 
 
@@ -14,8 +13,7 @@ import cv2
 
 IMG_SIZE = (224, 224)
 
-# Threshold obtained from your PR-curve best-F1 sweep
-# P = 0.893, R = 0.875
+# Best-F1 threshold from your training
 THRESHOLD = 0.5
 
 
@@ -62,23 +60,51 @@ model = load_model()
 
 
 # ============================================================
-# GRAD-CAM FUNCTION
+# FIND LAST CONVOLUTIONAL LAYER
 # ============================================================
 
-def make_gradcam_heatmap(
-    img_array,
-    model,
-    last_conv_layer_name
-):
+def find_last_conv_layer(model):
 
-    # Model that returns:
-    # 1. feature maps from the final convolutional layer
+    # Search from the end of the model
+    for layer in reversed(model.layers):
+
+        try:
+            output_shape = layer.output.shape
+
+            # Convolutional feature maps normally have:
+            # (batch, height, width, channels)
+
+            if len(output_shape) == 4:
+                return layer
+
+        except Exception:
+            continue
+
+    return None
+
+
+# ============================================================
+# GRAD-CAM
+# ============================================================
+
+def make_gradcam_heatmap(img_array, model):
+
+    last_conv_layer = find_last_conv_layer(model)
+
+    if last_conv_layer is None:
+        raise ValueError(
+            "Could not find a suitable convolutional layer "
+            "for Grad-CAM."
+        )
+
+    # Create model that outputs:
+    # 1. convolutional feature maps
     # 2. final prediction
 
     grad_model = tf.keras.models.Model(
         inputs=model.inputs,
         outputs=[
-            model.get_layer(last_conv_layer_name).output,
+            last_conv_layer.output,
             model.output
         ]
     )
@@ -86,18 +112,46 @@ def make_gradcam_heatmap(
     # Calculate gradients
     with tf.GradientTape() as tape:
 
-        conv_outputs, predictions = grad_model(img_array)
+        conv_outputs, predictions = grad_model(
+            img_array
+        )
 
-        # Binary classifier output
+        # Some Keras models return predictions
+        # inside a list or tuple.
+
+        if isinstance(predictions, (list, tuple)):
+            predictions = predictions[0]
+
+        predictions = tf.convert_to_tensor(
+            predictions
+        )
+
+        # Make sure prediction has shape:
+        # (batch, 1)
+
+        if len(predictions.shape) == 1:
+            predictions = tf.expand_dims(
+                predictions,
+                axis=-1
+            )
+
+        # Binary classifier
         class_channel = predictions[:, 0]
 
-    # Gradient of prediction with respect to feature maps
+    # Calculate gradients
     grads = tape.gradient(
         class_channel,
         conv_outputs
     )
 
-    # Average gradients over width and height
+    if grads is None:
+        raise ValueError(
+            "Gradients could not be calculated. "
+            "The selected layer may not be connected "
+            "to the model's output."
+        )
+
+    # Average gradients across spatial dimensions
     pooled_grads = tf.reduce_mean(
         grads,
         axis=(0, 1, 2)
@@ -106,24 +160,30 @@ def make_gradcam_heatmap(
     # Remove batch dimension
     conv_outputs = conv_outputs[0]
 
-    # Weight each feature map by its importance
-    heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
+    # Weight every feature map according to importance
+    heatmap = tf.reduce_sum(
+        conv_outputs * pooled_grads,
+        axis=-1
+    )
 
-    heatmap = tf.squeeze(heatmap)
-
-    # Only keep positive influence
+    # Only positive influence
     heatmap = tf.maximum(
         heatmap,
         0
     )
 
     # Normalize
-    max_value = tf.reduce_max(heatmap)
+    max_value = tf.reduce_max(
+        heatmap
+    )
 
-    if max_value != 0:
-        heatmap /= max_value
+    if float(max_value) > 0:
+        heatmap = heatmap / max_value
 
-    return heatmap.numpy()
+    return (
+        heatmap.numpy(),
+        last_conv_layer.name
+    )
 
 
 # ============================================================
@@ -151,7 +211,7 @@ if uploaded_file is not None:
         uploaded_file
     ).convert("RGB")
 
-    # Display original image
+    # Display uploaded image
     st.image(
         image,
         caption="Uploaded Image",
@@ -162,12 +222,10 @@ if uploaded_file is not None:
     # PREPROCESSING
     # --------------------------------------------------------
 
-    # Resize to model input size
     img = image.resize(
         IMG_SIZE
     )
 
-    # Convert to NumPy
     img_array = np.array(
         img,
         dtype="float32"
@@ -180,31 +238,48 @@ if uploaded_file is not None:
     )
 
     # ResNet50 preprocessing
-    # IMPORTANT:
-    # Do NOT divide by 255 here.
     img_array = preprocess_input(
         img_array
     )
 
     # --------------------------------------------------------
-    # MODEL PREDICTION
+    # PREDICTION
     # --------------------------------------------------------
 
-    prob = model.predict(
+    raw_prediction = model.predict(
         img_array,
         verbose=0
-    )[0][0]
+    )
 
-    # Classification
+    # Handle possible list/tuple model output
+    if isinstance(
+        raw_prediction,
+        (list, tuple)
+    ):
+        raw_prediction = raw_prediction[0]
+
+    raw_prediction = np.asarray(
+        raw_prediction
+    )
+
+    # Get probability
+    prob = float(
+        raw_prediction.reshape(-1)[0]
+    )
+
+    # --------------------------------------------------------
+    # CLASSIFICATION
+    # --------------------------------------------------------
+
     prediction = (
         "Cancer"
         if prob >= THRESHOLD
         else "Non-Cancer"
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # RESULT
-    # --------------------------------------------------------
+    # ========================================================
 
     st.markdown("---")
 
@@ -233,7 +308,7 @@ if uploaded_file is not None:
         )
 
     # ========================================================
-    # GRAD-CAM EXPLANATION
+    # GRAD-CAM
     # ========================================================
 
     st.markdown("---")
@@ -249,18 +324,14 @@ if uploaded_file is not None:
 
     try:
 
-        # ----------------------------------------------------
         # Generate Grad-CAM
-        # ----------------------------------------------------
-
-        heatmap = make_gradcam_heatmap(
+        heatmap, layer_used = make_gradcam_heatmap(
             img_array,
-            model,
-            "conv5_block3_out"
+            model
         )
 
         # ----------------------------------------------------
-        # Convert heatmap to image
+        # CONVERT HEATMAP
         # ----------------------------------------------------
 
         heatmap_uint8 = np.uint8(
@@ -273,20 +344,21 @@ if uploaded_file is not None:
             cv2.COLORMAP_JET
         )
 
-        # OpenCV uses BGR
+        # Convert BGR -> RGB
         heatmap_color = cv2.cvtColor(
             heatmap_color,
             cv2.COLOR_BGR2RGB
         )
 
         # ----------------------------------------------------
-        # Resize heatmap to original image
+        # ORIGINAL IMAGE
         # ----------------------------------------------------
 
         original = np.array(
             image
         )
 
+        # Resize heatmap to original image size
         heatmap_color = cv2.resize(
             heatmap_color,
             (
@@ -296,19 +368,19 @@ if uploaded_file is not None:
         )
 
         # ----------------------------------------------------
-        # Overlay
+        # OVERLAY
         # ----------------------------------------------------
 
         overlay = cv2.addWeighted(
             original,
-            0.6,
+            0.60,
             heatmap_color,
-            0.4,
+            0.40,
             0
         )
 
         # ----------------------------------------------------
-        # Display Grad-CAM
+        # DISPLAY
         # ----------------------------------------------------
 
         st.image(
@@ -321,46 +393,36 @@ if uploaded_file is not None:
         )
 
         # ----------------------------------------------------
-        # Explanation text
+        # EXPLANATION
         # ----------------------------------------------------
 
-        if prediction == "Cancer":
+        st.info(
+            f"""
+            **Model explanation**
 
-            st.info(
-                """
-                **Model explanation:**
+            The highlighted regions represent areas that
+            contributed most strongly to the model's
+            **{prediction}** prediction.
 
-                The highlighted regions represent areas that
-                contributed most strongly to the model's
-                Cancer prediction.
-                """
-            )
-
-        else:
-
-            st.info(
-                """
-                **Model explanation:**
-
-                The highlighted regions represent areas that
-                contributed most strongly to the model's
-                Non-Cancer prediction.
-                """
-            )
-
-        # ----------------------------------------------------
-        # Scientific disclaimer
-        # ----------------------------------------------------
+            **Grad-CAM layer:** `{layer_used}`
+            """
+        )
 
         st.caption(
-            "Grad-CAM shows which image regions influenced "
-            "the neural network. It does not prove that the "
-            "highlighted regions are medically cancerous."
+            "Red/yellow regions indicate stronger influence "
+            "on the model's prediction, while blue regions "
+            "indicate weaker influence."
+        )
+
+        st.caption(
+            "Important: Grad-CAM shows which regions influenced "
+            "the neural network. It does not prove that a "
+            "highlighted region is medically cancerous."
         )
 
     except Exception as e:
 
-        st.warning(
+        st.error(
             "Grad-CAM could not be generated."
         )
 
