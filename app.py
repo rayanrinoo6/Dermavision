@@ -7,7 +7,7 @@ from tensorflow.keras.applications.resnet50 import preprocess_input
 
 # CONFIG
 IMG_SIZE = (224, 224)
-THRESHOLD = 0.543  # from PR-curve best-F1 sweep in training script (P=0.893, R=0.875)
+THRESHOLD = 0.5  # from PR-curve best-F1 sweep in training script (P=0.893, R=0.875)
 
 MODEL_PATH = hf_hub_download(
     repo_id="RAYAN34567/skin_cancer_resnet",
