@@ -7,19 +7,10 @@ from tensorflow.keras.applications.resnet50 import preprocess_input
 import cv2
 
 
-# ============================================================
-# CONFIG
-# ============================================================
 
 IMG_SIZE = (224, 224)
 
-# Best-F1 threshold from your training
 THRESHOLD = 0.5
-
-
-# ============================================================
-# DOWNLOAD MODEL
-# ============================================================
 
 MODEL_PATH = hf_hub_download(
     repo_id="RAYAN34567/skin_cancer_resnet",
@@ -27,9 +18,6 @@ MODEL_PATH = hf_hub_download(
 )
 
 
-# ============================================================
-# PAGE SETUP
-# ============================================================
 
 st.set_page_config(
     page_title="Skin Cancer Detection AI",
@@ -44,9 +32,7 @@ st.write(
 )
 
 
-# ============================================================
 # LOAD MODEL
-# ============================================================
 
 @st.cache_resource
 def load_model():
@@ -59,9 +45,6 @@ def load_model():
 model = load_model()
 
 
-# ============================================================
-# FIND LAST CONVOLUTIONAL LAYER
-# ============================================================
 
 def find_last_conv_layer(model):
 
@@ -83,9 +66,6 @@ def find_last_conv_layer(model):
     return None
 
 
-# ============================================================
-# GRAD-CAM
-# ============================================================
 
 def make_gradcam_heatmap(img_array, model):
 
@@ -97,10 +77,6 @@ def make_gradcam_heatmap(img_array, model):
             "for Grad-CAM."
         )
 
-    # Create model that outputs:
-    # 1. convolutional feature maps
-    # 2. final prediction
-
     grad_model = tf.keras.models.Model(
         inputs=model.inputs,
         outputs=[
@@ -109,15 +85,12 @@ def make_gradcam_heatmap(img_array, model):
         ]
     )
 
-    # Calculate gradients
     with tf.GradientTape() as tape:
 
         conv_outputs, predictions = grad_model(
             img_array
         )
 
-        # Some Keras models return predictions
-        # inside a list or tuple.
 
         if isinstance(predictions, (list, tuple)):
             predictions = predictions[0]
@@ -126,8 +99,7 @@ def make_gradcam_heatmap(img_array, model):
             predictions
         )
 
-        # Make sure prediction has shape:
-        # (batch, 1)
+  
 
         if len(predictions.shape) == 1:
             predictions = tf.expand_dims(
@@ -135,7 +107,6 @@ def make_gradcam_heatmap(img_array, model):
                 axis=-1
             )
 
-        # Binary classifier
         class_channel = predictions[:, 0]
 
     # Calculate gradients
@@ -186,10 +157,6 @@ def make_gradcam_heatmap(img_array, model):
     )
 
 
-# ============================================================
-# FILE UPLOAD
-# ============================================================
-
 uploaded_file = st.file_uploader(
     "Upload an image",
     type=[
@@ -200,27 +167,17 @@ uploaded_file = st.file_uploader(
 )
 
 
-# ============================================================
-# PREDICTION
-# ============================================================
-
 if uploaded_file is not None:
 
-    # Load image
     image = Image.open(
         uploaded_file
     ).convert("RGB")
 
-    # Display uploaded image
     st.image(
         image,
         caption="Uploaded Image",
         width=233
     )
-
-    # --------------------------------------------------------
-    # PREPROCESSING
-    # --------------------------------------------------------
 
     img = image.resize(
         IMG_SIZE
@@ -231,27 +188,21 @@ if uploaded_file is not None:
         dtype="float32"
     )
 
-    # Add batch dimension
     img_array = np.expand_dims(
         img_array,
         axis=0
     )
 
-    # ResNet50 preprocessing
     img_array = preprocess_input(
         img_array
     )
 
-    # --------------------------------------------------------
-    # PREDICTION
-    # --------------------------------------------------------
 
     raw_prediction = model.predict(
         img_array,
         verbose=0
     )
 
-    # Handle possible list/tuple model output
     if isinstance(
         raw_prediction,
         (list, tuple)
@@ -262,14 +213,10 @@ if uploaded_file is not None:
         raw_prediction
     )
 
-    # Get probability
     prob = float(
         raw_prediction.reshape(-1)[0]
     )
 
-    # --------------------------------------------------------
-    # CLASSIFICATION
-    # --------------------------------------------------------
 
     prediction = (
         "Cancer"
@@ -277,9 +224,6 @@ if uploaded_file is not None:
         else "Non-Cancer"
     )
 
-    # ========================================================
-    # RESULT
-    # ========================================================
 
     st.markdown("---")
 
@@ -307,9 +251,6 @@ if uploaded_file is not None:
             """
         )
 
-    # ========================================================
-    # GRAD-CAM
-    # ========================================================
 
     st.markdown("---")
 
@@ -330,9 +271,6 @@ if uploaded_file is not None:
             model
         )
 
-        # ----------------------------------------------------
-        # CONVERT HEATMAP
-        # ----------------------------------------------------
 
         heatmap_uint8 = np.uint8(
             255 * heatmap
@@ -350,9 +288,6 @@ if uploaded_file is not None:
             cv2.COLOR_BGR2RGB
         )
 
-        # ----------------------------------------------------
-        # ORIGINAL IMAGE
-        # ----------------------------------------------------
 
         original = np.array(
             image
@@ -367,9 +302,6 @@ if uploaded_file is not None:
             )
         )
 
-        # ----------------------------------------------------
-        # OVERLAY
-        # ----------------------------------------------------
 
         overlay = cv2.addWeighted(
             original,
@@ -392,9 +324,6 @@ if uploaded_file is not None:
             use_container_width=True
         )
 
-        # ----------------------------------------------------
-        # EXPLANATION
-        # ----------------------------------------------------
 
         st.info(
             f"""
@@ -430,10 +359,6 @@ if uploaded_file is not None:
             str(e)
         )
 
-
-# ============================================================
-# FOOTER
-# ============================================================
 
 st.markdown("---")
 
