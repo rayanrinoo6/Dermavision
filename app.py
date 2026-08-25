@@ -4,42 +4,36 @@ import numpy as np
 from PIL import Image
 from huggingface_hub import hf_hub_download
 
-
-#CONFIG
-
+# CONFIG
 IMG_SIZE = (224, 224)
 THRESHOLD = 0.4
-
 MODEL_PATH = hf_hub_download(
     repo_id="RAYAN34567/Skin_Cancer_AI",
-    filename="skin_cancer_cnn_final.h5"
+    filename="skin_cancer_cnn_final.keras"   # <-- changed from .h5 to .keras
 )
 
-#PAGE SETUP
+# PAGE SETUP
 st.set_page_config(
     page_title="Skin Cancer Detection AI",
     layout="centered"
 )
-
 st.title("DermaVision")
 st.write("Upload a skin lesion image to receive a prediction, please make sure the image is in suitable lighting.")
 
-
-#LOAD MODEL
+# LOAD MODEL
 @st.cache_resource
 def load_model():
     return tf.keras.models.load_model(MODEL_PATH, compile=False)
 
 model = load_model()
 
-#FILE UPLOAD
+# FILE UPLOAD
 uploaded_file = st.file_uploader(
     "Upload an image",
     type=["jpg", "jpeg", "png"]
 )
 
-
-#PREDICTION
+# PREDICTION
 if uploaded_file is not None:
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Uploaded Image", width=233)
@@ -53,15 +47,11 @@ if uploaded_file is not None:
 
     st.markdown("---")
     st.subheader("Prediction Result")
-
     if prediction == "Cancer":
         st.error(f"**Cancer Detected**\n\nProbability: **{prob:.2%}**")
     else:
         st.success(f"**Non-Cancer**\n\nProbability: **{(1 - prob):.2%}**")
 
-#FOOTER
+# FOOTER
 st.markdown("---")
 st.write("This tool is for research and educational use only")
-
-
-
